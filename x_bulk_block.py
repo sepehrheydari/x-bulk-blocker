@@ -247,9 +247,13 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
                 if entries_count > 0:
                     fe = inst["entries"][0]
                     fc = fe.get("content", {})
+                    ic = fc.get("itemContent", {})
+                    ur = ic.get("user_results", {})
                     log(f"[DEBUG] First entry: entryId={fe.get('entryId')!r}, "
                         f"content_keys={list(fc.keys())}, "
-                        f"itemContent_keys={list(fc.get('itemContent', {}).keys())}")
+                        f"itemContent_keys={list(ic.keys())}, "
+                        f"user_results_keys={list(ur.keys())}, "
+                        f"result_keys={list(ur.get('result', {}).keys())}")
 
         instructions = (
             data.get("data", {})
@@ -279,17 +283,19 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
                         next_cursor = val
                     continue
 
-                # Shape 1: content.itemContent.user_results.result
-                user_result = (
-                    content.get("itemContent", {})
-                           .get("user_results", {})
-                           .get("result", {})
-                )
-                # Shape 2: content.user_results.result
-                if not user_result:
+                # Try all known shapes for the user object:
+                # Shape 1: itemContent.user_results.result  (standard GraphQL wrapper)
+                item_content = content.get("itemContent", {})
+                ur = item_content.get("user_results", {})
+                user_result = ur.get("result", {})
+                # Shape 2: user_results.result has no .result — user_results IS the user
+                if not user_result.get("rest_id") and not user_result.get("legacy"):
+                    user_result = ur
+                # Shape 3: content.user_results.result  (rare, non-itemContent wrapper)
+                if not user_result.get("rest_id") and not user_result.get("legacy"):
                     user_result = (
-                        content.get("user_results", {})
-                               .get("result", {})
+                        content.get("user_results", {}).get("result", {})
+                        or content.get("user_results", {})
                     )
 
                 uid = (
