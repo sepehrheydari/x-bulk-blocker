@@ -5,6 +5,15 @@ Run with:  python app.py          (local)
 Then open: http://localhost:7070
 """
 
+# gevent monkey-patch MUST come first — before any other stdlib imports.
+# Without this, gevent workers can't yield during time.sleep() / queue.get()
+# and the SSE stream blocks/crashes immediately.
+try:
+    from gevent import monkey
+    monkey.patch_all()
+except ImportError:
+    pass  # running locally without gevent — fine, threaded mode handles it
+
 import json
 import os
 import queue
