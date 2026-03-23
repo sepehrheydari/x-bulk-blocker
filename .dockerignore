@@ -9,3 +9,7 @@ __pycache__
 start.bat
 start.sh
 docker-compose.yml
+tests/
+requirements-dev.txt
+.github/
+README.md
