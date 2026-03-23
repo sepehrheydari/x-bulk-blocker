@@ -407,16 +407,76 @@ def fetch_tweet_authors(list_id: str, client: httpx.Client, log=print) -> dict[s
 
 
 
+def _fetch_blocked_ids(client: httpx.Client, log=print) -> set[str]:
+    """
+    Fetch all user IDs the authenticated user has already blocked.
+    Uses GET /1.1/blocks/ids.json — returns up to 5,000 IDs per page.
+    Returns an empty set if the endpoint fails (non-fatal — we just skip pre-filtering).
+    """
+    _BLOCKS_IDS_URL = "https://x.com/i/api/1.1/blocks/ids.json"
+    blocked: set[str] = set()
+    cursor = -1
+
+    try:
+        while True:
+            resp = client.get(
+                _BLOCKS_IDS_URL,
+                params={"stringify_ids": "true", "count": 5000, "cursor": cursor},
+            )
+            if resp.status_code == 429:
+                log("[INFO] Rate limit fetching block list — waiting 60s …")
+                time.sleep(60)
+                resp = client.get(
+                    _BLOCKS_IDS_URL,
+                    params={"stringify_ids": "true", "count": 5000, "cursor": cursor},
+                )
+            if resp.status_code != 200:
+                log(f"[WARN] Could not fetch existing block list (HTTP {resp.status_code}) — skipping pre-filter.")
+                return set()
+
+            data = resp.json()
+            ids = data.get("ids", [])
+            blocked.update(ids)
+
+            next_cursor = data.get("next_cursor", 0)
+            if not next_cursor:
+                break
+            cursor = next_cursor
+
+    except Exception as exc:
+        log(f"[WARN] Could not fetch existing block list ({exc}) — skipping pre-filter.")
+        return set()
+
+    return blocked
+
+
 def bulk_block(client: httpx.Client, id_map: dict[str, str], log=print) -> None:
     """Block each user via X's internal web API."""
     _BLOCK_URL = "https://x.com/i/api/1.1/blocks/create.json"
-    total = len(id_map)
+
+    log("[INFO] Fetching your existing block list to skip already-blocked users …")
+    already_blocked = _fetch_blocked_ids(client, log=log)
+    if already_blocked:
+        log(f"[INFO] {len(already_blocked)} user(s) already blocked — will skip them.")
+
+    # Pre-filter: remove already-blocked users
+    filtered = {u: uid for u, uid in id_map.items() if uid not in already_blocked}
+    pre_skipped = len(id_map) - len(filtered)
+    if pre_skipped:
+        log(f"[INFO] Skipping {pre_skipped} already-blocked user(s).")
+
+    total = len(filtered)
+    if total == 0:
+        log("[INFO] All users are already blocked. Nothing to do.")
+        log(f"[DONE] {len(id_map)} users processed — 0 blocked, {len(id_map)} skipped, 0 failed.")
+        return
+
     success = skipped = failed = 0
 
     # 429 backoff schedule: wait these many seconds before each retry attempt
     _RATE_LIMIT_WAITS = [60, 120, 300]
 
-    for idx, (username, user_id) in enumerate(id_map.items(), start=1):
+    for idx, (username, user_id) in enumerate(filtered.items(), start=1):
         try:
             resp = client.post(_BLOCK_URL, data={"user_id": user_id})
 
@@ -461,6 +521,7 @@ def bulk_block(client: httpx.Client, id_map: dict[str, str], log=print) -> None:
             elif resp.status_code in (403, 404):
                 log(f"[{idx}/{total}] @{username} ... SKIPPED (already blocked or deleted)")
                 skipped += 1
+                continue  # no delay needed — we didn't make a write request
             else:
                 log(f"[{idx}/{total}] @{username} ... FAILED ({resp.status_code})")
                 failed += 1
@@ -472,7 +533,7 @@ def bulk_block(client: httpx.Client, id_map: dict[str, str], log=print) -> None:
         if idx < total:
             time.sleep(BLOCK_DELAY)
 
-    log(f"[DONE] {total} users processed — {success} blocked, {skipped} skipped, {failed} failed.")
+    log(f"[DONE] {len(id_map)} users processed — {success} blocked, {pre_skipped + skipped} skipped, {failed} failed.")
 
 
 def run_job(

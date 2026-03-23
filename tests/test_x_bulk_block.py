@@ -29,6 +29,11 @@ def clear_query_id_cache():
     x_bulk_block._query_id_cache.clear()
 
 _BLOCK_URL = "https://x.com/i/api/1.1/blocks/create.json"
+_BLOCKS_IDS_URL = "https://x.com/i/api/1.1/blocks/ids.json"
+
+# Patch _fetch_blocked_ids to return empty set in all bulk_block tests
+# (dedicated test below covers the pre-filter branch separately)
+_no_existing_blocks = patch("x_bulk_block._fetch_blocked_ids", return_value=set())
 _COOKIE_STR = "auth_token=faketoken; ct0=fakect0"
 
 
@@ -212,8 +217,9 @@ class TestFetchTweetAuthors:
 # ── bulk_block ────────────────────────────────────────────────────────────────
 
 class TestBulkBlock:
+    @_no_existing_blocks
     @respx.mock
-    def test_successful_blocks_logged(self):
+    def test_successful_blocks_logged(self, _mock_fetch):
         respx.post(_BLOCK_URL).mock(return_value=httpx.Response(200, json={}))
         logs = []
         with patch("x_bulk_block.time.sleep"):
@@ -224,8 +230,9 @@ class TestBulkBlock:
         assert any("BLOCKED" in m and "bob" in m for m in logs)
         assert any("2 blocked" in m for m in logs)
 
+    @_no_existing_blocks
     @respx.mock
-    def test_already_blocked_skipped(self):
+    def test_already_blocked_skipped(self, _mock_fetch):
         respx.post(_BLOCK_URL).mock(return_value=httpx.Response(403, json={}))
         logs = []
         with patch("x_bulk_block.time.sleep"):
@@ -235,8 +242,9 @@ class TestBulkBlock:
         assert any("SKIPPED" in m for m in logs)
         assert any("0 blocked" in m and "1 skipped" in m for m in logs)
 
+    @_no_existing_blocks
     @respx.mock
-    def test_404_skipped(self):
+    def test_404_skipped(self, _mock_fetch):
         respx.post(_BLOCK_URL).mock(return_value=httpx.Response(404, json={}))
         logs = []
         with patch("x_bulk_block.time.sleep"):
@@ -245,8 +253,9 @@ class TestBulkBlock:
 
         assert any("SKIPPED" in m for m in logs)
 
+    @_no_existing_blocks
     @respx.mock
-    def test_server_error_counted_as_failed(self):
+    def test_server_error_counted_as_failed(self, _mock_fetch):
         respx.post(_BLOCK_URL).mock(return_value=httpx.Response(500, json={}))
         logs = []
         with patch("x_bulk_block.time.sleep"):
@@ -256,8 +265,9 @@ class TestBulkBlock:
         assert any("FAILED" in m for m in logs)
         assert any("1 failed" in m for m in logs)
 
+    @_no_existing_blocks
     @respx.mock
-    def test_rate_limit_retries_and_succeeds(self):
+    def test_rate_limit_retries_and_succeeds(self, _mock_fetch):
         route = respx.post(_BLOCK_URL)
         route.side_effect = [
             httpx.Response(429, json={}),
@@ -271,8 +281,9 @@ class TestBulkBlock:
         assert any("RATE LIMITED" in m for m in logs)
         assert any("BLOCKED" in m for m in logs)
 
+    @_no_existing_blocks
     @respx.mock
-    def test_rate_limit_retry_fails_counted(self):
+    def test_rate_limit_retry_fails_counted(self, _mock_fetch):
         route = respx.post(_BLOCK_URL)
         route.side_effect = [
             httpx.Response(429, json={}),
@@ -285,8 +296,9 @@ class TestBulkBlock:
 
         assert any("FAILED" in m for m in logs)
 
+    @_no_existing_blocks
     @respx.mock
-    def test_401_mid_run_aborts_with_resume_hint(self):
+    def test_401_mid_run_aborts_with_resume_hint(self, _mock_fetch):
         route = respx.post(_BLOCK_URL)
         route.side_effect = [
             httpx.Response(200, json={}),
@@ -302,8 +314,9 @@ class TestBulkBlock:
         # summary still emitted
         assert any("[DONE]" in m for m in logs)
 
+    @_no_existing_blocks
     @respx.mock
-    def test_network_error_counted_as_failed(self):
+    def test_network_error_counted_as_failed(self, _mock_fetch):
         respx.post(_BLOCK_URL).mock(side_effect=httpx.ConnectError("timeout"))
         logs = []
         with patch("x_bulk_block.time.sleep"):
@@ -312,8 +325,9 @@ class TestBulkBlock:
 
         assert any("FAILED (network" in m for m in logs)
 
+    @_no_existing_blocks
     @respx.mock
-    def test_done_summary_line_always_emitted(self):
+    def test_done_summary_line_always_emitted(self, _mock_fetch):
         respx.post(_BLOCK_URL).mock(return_value=httpx.Response(200, json={}))
         logs = []
         with patch("x_bulk_block.time.sleep"):
@@ -455,6 +469,22 @@ class TestFetchListMembers:
                 result = fetch_list_members("123", client, log=logs.append)
         assert result == {"alice": "111"}
         assert any("rate limit" in m.lower() for m in logs)
+
+
+    @respx.mock
+    def test_pre_filter_skips_already_blocked(self):
+        respx.get(_BLOCKS_IDS_URL).mock(
+            return_value=httpx.Response(200, json={"ids": ["111"], "next_cursor": 0})
+        )
+        respx.post(_BLOCK_URL).mock(return_value=httpx.Response(200, json={}))
+        logs = []
+        with patch("x_bulk_block.time.sleep"):
+            with _make_client() as client:
+                bulk_block(client, {"alice": "111", "bob": "222"}, log=logs.append)
+
+        assert not any("alice" in m and "BLOCKED" in m for m in logs)
+        assert any("bob" in m and "BLOCKED" in m for m in logs)
+        assert any("1 skipped" in m for m in logs)
 
 
 # ── run_job ───────────────────────────────────────────────────────────────────
