@@ -1,7 +1,7 @@
 // ── Translations ─────────────────────────────────────────────────────────────
 const TRANSLATIONS = {
   en: {
-    title:                'X List Bulk Blocker',
+    title:                'Social List Bulk Blocker',
     subtitle:             'Block every member of any public X list.<br>No API keys or developer account needed — just your browser cookies.',
     privacy:              '🔒 <strong>Privacy:</strong> Your cookies are used only to call X on your behalf and are <strong>never stored or logged</strong> on this server. Use HTTPS to keep them private in transit. Cookies are cleared from memory as soon as your job finishes.',
     risk_notice:          '⚠️ <strong>Risk notice</strong> — verified against X\'s ToS (effective Jan 15 2026):<table class="risk-table"><thead><tr><th>What this tool does</th><th>ToS status</th></tr></thead><tbody><tr><td>Automated HTTP requests</td><td class="rt-warn">⚠️ Violates "no automated access except published interfaces"</td></tr><tr><td>Using internal GraphQL API (not the public API)</td><td class="rt-warn">⚠️ Violates "published interfaces" requirement</td></tr><tr><td>Fetching list members / reading IDs</td><td class="rt-warn">⚠️ Covered by the scraping prohibition</td></tr><tr><td>The block action itself</td><td class="rt-ok">✅ Legitimate — blocking is your explicit right</td></tr><tr><td>Distributing this tool publicly</td><td class="rt-warn">⚠️ "Facilitating others" clause</td></tr></tbody></table><span class="rt-note">In practice X enforces this against bots that spam or scrape at scale — not against users managing their own block list. The most likely outcome is being prompted to log in again. <strong>Use at your own risk.</strong></span>',
@@ -15,6 +15,11 @@ const TRANSLATIONS = {
     auth_token_hint:      'auth_token — found in Cookies → https://x.com',
     ct0_placeholder:      'Paste ct0 value here',
     ct0_hint:             'ct0 — found in Cookies → https://x.com',
+    step3_label:          'Block Delay',
+    delay_hint:           'Seconds between each block. Higher = safer. 2s recommended.',
+    ack_text:             "I understand this tool uses unofficial APIs against X's ToS and I accept full responsibility for my account.",
+    selfhost_summary:     '🖥 Prefer to run it yourself?',
+    selfhost_desc:        'Running locally means your cookies never leave your own machine:',
     start_btn:            '🚫 Block Everyone',
     progress_title:       'Live Progress',
     status_running:       'Running…',
@@ -26,8 +31,8 @@ const TRANSLATIONS = {
     lang_toggle:          'فارسی',
   },
   fa: {
-    title:                'مسدودساز دسته\u200cجمعی لیست X',
-    subtitle:             'مسدود کردن تمام اعضای هر لیست عمومی X.<br>بدون نیاز به کلیدهای API یا حساب توسعه\u200cدهنده — فقط کوکی\u200cهای مرورگرتان کافی است.',
+    title:                'مسدودساز دسته‌جمعی لیست',
+    subtitle:             'مسدود کردن تمام اعضای هر لیست عمومی X.<br>بدون نیاز به کلیدهای API یا حساب توسعه‌دهنده — فقط کوکی‌های مرورگرتان کافی است.',
     privacy:              '🔒 <strong>حریم خصوصی:</strong> کوکی\u200cهای شما فقط برای فراخوانی X از طرف شما استفاده می\u200cشود و <strong>هرگز ذخیره یا ثبت نمی\u200cشوند</strong> در این سرور. از HTTPS برای حفظ امنیت آن\u200cها در انتقال استفاده کنید. کوکی\u200cها به محض پایان کار از حافظه پاک می\u200cشوند.',
     risk_notice:          '⚠️ <strong>هشدار</strong> — بررسی‌شده با شرایط استفاده X (مؤثر از ۱۵ ژانویه ۲۰۲۶):<table class="risk-table"><thead><tr><th>کاری که این ابزار انجام می‌دهد</th><th>وضعیت در شرایط استفاده</th></tr></thead><tbody><tr><td>درخواست‌های HTTP خودکار</td><td class="rt-warn">⚠️ نقض «دسترسی خودکار جز از طریق رابط‌های منتشرشده»</td></tr><tr><td>استفاده از API داخلی GraphQL (نه API عمومی)</td><td class="rt-warn">⚠️ نقض شرط «رابط‌های منتشرشده»</td></tr><tr><td>دریافت اعضای لیست / خواندن شناسه‌ها</td><td class="rt-warn">⚠️ تحت پوشش ممنوعیت اسکرپینگ</td></tr><tr><td>خود عمل مسدودسازی</td><td class="rt-ok">✅ مشروع — مسدود کردن حق صریح شماست</td></tr><tr><td>توزیع عمومی این ابزار</td><td class="rt-warn">⚠️ بند «کمک به نقض شرایط توسط دیگران»</td></tr></tbody></table><span class="rt-note">در عمل X این موارد را علیه بات‌هایی اعمال می‌کند که هرزنامه می‌فرستند یا در مقیاس بزرگ اسکرپ می‌کنند — نه علیه کاربرانی که فهرست مسدودی خود را مدیریت می‌کنند. محتمل‌ترین نتیجه درخواست ورود مجدد است. <strong>با مسئولیت خودتان استفاده کنید.</strong></span>',
     step1_label:          'آدرس لیست X',
@@ -40,6 +45,11 @@ const TRANSLATIONS = {
     auth_token_hint:      'auth_token — در مسیر Cookies ← https://x.com پیدا می\u200cشود',
     ct0_placeholder:      'مقدار ct0 را اینجا جای\u200cگذاری کنید',
     ct0_hint:             'ct0 — در مسیر Cookies ← https://x.com پیدا می\u200cشود',
+    step3_label:          'تأخیر بین مسدودسازی',
+    delay_hint:           'ثانیه فاشله بین هر مسدود. بیشتر = امن‌تر. ۲ ثانیه پیشنهاد می‌شود.',
+    ack_text:             'می‌دانم که این ابزار از APIهای غیررسمی بر خلاف شرایط استفاده X استفاده می‌کند و مسئولیت کامل حسابم را می‌پذیرم.',
+    selfhost_summary:     '🖥 ترجیح می‌دهید خودتان اجرا کنید?',
+    selfhost_desc:        'اجرای لوکال یعنی کوکی‌هایتان هرگز ماشین خودتان را ترک نمی‌کنند:',
     start_btn:            '🚫 مسدود کردن همه',
     progress_title:       'پیشرفت زنده',
     status_running:       'در حال اجرا…',
@@ -147,6 +157,8 @@ function startPolling(jobId) {
       }
       btn.disabled = false;
       btn.textContent = hasError ? t('btn_try_again') : t('btn_run_again');
+      // Re-apply ack gate after run completes
+      if (ackBox && !ackBox.checked) btn.disabled = true;
       return; // stop polling
     }
 
@@ -196,3 +208,20 @@ document.getElementById('lang-btn').addEventListener('click', () => {
 
 // Apply saved or default language on load
 applyLang(currentLang);
+
+// ── Delay slider live display ─────────────────────────────────────────────────
+const delaySlider  = document.getElementById('block_delay');
+const delayDisplay = document.getElementById('delay-display');
+if (delaySlider && delayDisplay) {
+  delaySlider.addEventListener('input', () => {
+    delayDisplay.textContent = parseFloat(delaySlider.value).toFixed(1);
+  });
+}
+
+// ── Acknowledgement checkbox — disable Start until ticked ────────────────────
+const ackBox = document.getElementById('ack');
+if (ackBox && btn) {
+  function syncBtn() { btn.disabled = !ackBox.checked; }
+  ackBox.addEventListener('change', syncBtn);
+  syncBtn(); // initial state
+}

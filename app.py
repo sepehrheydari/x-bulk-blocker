@@ -68,7 +68,8 @@ def set_security_headers(response: Response) -> Response:
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self'; "
-        "style-src 'self'; "
+        "style-src 'self' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
         "frame-ancestors 'none';"
@@ -88,6 +89,13 @@ def start():
     auth_token = request.form.get("auth_token", "").strip()
     ct0        = request.form.get("ct0",        "").strip()
     dry_run    = False  # dry-run mode removed; always block
+
+    # Block delay: 1.5–5.0 s, default 2.0
+    try:
+        block_delay = float(request.form.get("block_delay", 2.0))
+        block_delay = max(1.5, min(5.0, block_delay))
+    except (TypeError, ValueError):
+        block_delay = 2.0
 
     if len(list_url) > 300 or len(auth_token) > 200 or len(ct0) > 200:
         return {"error": "Input too long."}, 400
@@ -120,7 +128,7 @@ def start():
                     _jobs[job_id]["messages"].append({"type": "log", "msg": msg})
 
         try:
-            run_job(list_id, cookie_str, dry_run=dry_run, log=log)
+            run_job(list_id, cookie_str, dry_run=dry_run, log=log, block_delay=block_delay)
         except RuntimeError as exc:
             with _jobs_lock:
                 if job_id in _jobs:

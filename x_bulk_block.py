@@ -471,7 +471,13 @@ def _fetch_blocked_ids(client: httpx.Client, log=print) -> set[str]:
     return blocked
 
 
-def bulk_block(client: httpx.Client, id_map: dict[str, str], log=print) -> None:
+def bulk_block(
+    client: httpx.Client,
+    id_map: dict[str, str],
+    log=print,
+    block_delay: float = BLOCK_DELAY,
+    max_blocks: int = 5000,
+) -> None:
     """Block each user via X's internal web API."""
     _BLOCK_URL = "https://x.com/i/api/1.1/blocks/create.json"
 
@@ -485,6 +491,11 @@ def bulk_block(client: httpx.Client, id_map: dict[str, str], log=print) -> None:
     pre_skipped = len(id_map) - len(filtered)
     if pre_skipped:
         log(f"[INFO] Skipping {pre_skipped} already-blocked user(s).")
+
+    # Apply per-run cap to reduce detection risk
+    if len(filtered) > max_blocks:
+        log(f"[INFO] Capping this run at {max_blocks} blocks (of {len(filtered)} eligible). Run again to continue.")
+        filtered = dict(list(filtered.items())[:max_blocks])
 
     total = len(filtered)
     if total == 0:
@@ -532,7 +543,7 @@ def bulk_block(client: httpx.Client, id_map: dict[str, str], log=print) -> None:
                     log(f"[{idx}/{total}] @{username} ... FAILED after {len(_RATE_LIMIT_WAITS)} retries (still 429)")
                     failed += 1
                     if idx < total:
-                        time.sleep(BLOCK_DELAY)
+                        time.sleep(block_delay)
                     continue
                 resp = final_resp
 
@@ -552,7 +563,7 @@ def bulk_block(client: httpx.Client, id_map: dict[str, str], log=print) -> None:
             failed += 1
 
         if idx < total:
-            time.sleep(BLOCK_DELAY)
+            time.sleep(block_delay)
 
     log(f"[DONE] {len(id_map)} users processed — {success} blocked, {pre_skipped + skipped} skipped, {failed} failed.")
 
@@ -562,6 +573,8 @@ def run_job(
     cookie_str: str,
     dry_run: bool = False,
     log=print,
+    block_delay: float = BLOCK_DELAY,
+    max_blocks: int = 5000,
 ) -> None:
     """
     Central entry point callable from both CLI and web UI.
@@ -609,7 +622,7 @@ def run_job(
             log(f"[DONE] Would block {len(id_map)} user(s) in ~{est:.0f}s (~{est/60:.0f} min at 1 block/{BLOCK_DELAY}s).")
             return
 
-        bulk_block(client, id_map, log=log)
+        bulk_block(client, id_map, log=log, block_delay=block_delay, max_blocks=max_blocks)
 
 
 def main() -> None:

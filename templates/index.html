@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>X Bulk Blocker</title>
+  <title>List Bulk Blocker</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,9 +14,10 @@
 
   <div class="header">
     <div class="logo">
-      <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.911-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      <!-- generic shield/block icon — no platform trademark -->
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L4 5v6c0 5.25 3.4 10.15 8 11.35C16.6 21.15 20 16.25 20 11V5l-8-3zm0 10.99h6c-.46 3.28-2.74 6.24-6 7.08V13H6V7.29l6-2.25v7.95z"/></svg>
     </div>
-    <h1 data-i18n="title">X List Bulk Blocker</h1>
+    <h1 data-i18n="title">Social List Bulk Blocker</h1>
     <button id="lang-btn" class="lang-btn" aria-label="Switch language">فارسی</button>
   </div>
   <p class="subtitle" data-i18n-html="subtitle">Block every member of any public X list.<br>No API keys or developer account needed — just your browser cookies.</p>
@@ -69,6 +70,35 @@
         <p class="field-hint" data-i18n="ct0_hint">ct0 — found in Cookies → https://x.com</p>
       </div>
     </div>
+
+    <!-- Step 3 -->
+    <div class="step">
+      <div class="step-label"><span class="badge">3</span> <span data-i18n="step3_label">Block Delay</span></div>
+      <div class="delay-row">
+        <input type="range" id="block_delay" name="block_delay" min="1.5" max="5" step="0.5" value="2" class="delay-slider" />
+        <span class="delay-val"><span id="delay-display">2.0</span>s</span>
+      </div>
+      <p class="field-hint" data-i18n="delay_hint">Seconds between each block. Higher = safer. 2s recommended.</p>
+    </div>
+
+    <!-- Acknowledgement -->
+    <label class="ack-label">
+      <input type="checkbox" id="ack" />
+      <span data-i18n="ack_text">I understand this tool uses unofficial APIs against X's ToS and I accept full responsibility for my account.</span>
+    </label>
+
+    <!-- Self-host callout -->
+    <details class="selfhost">
+      <summary data-i18n="selfhost_summary">🖥 Prefer to run it yourself?</summary>
+      <div class="guide" style="margin-top:0">
+        <p data-i18n="selfhost_desc" style="font-size:13px;margin-bottom:8px;">Running locally means your cookies never leave your own machine:</p>
+        <pre class="selfhost-code">git clone https://github.com/sepehrheydari/x-bulk-blocker
+cd x-bulk-blocker
+pip install -r requirements.txt
+python app.py</pre>
+        <p style="font-size:12px;color:#536471;margin-top:6px;">Then open <code>http://localhost:7070</code></p>
+      </div>
+    </details>
 
     <button type="submit" id="start-btn" data-i18n="start_btn">🚫 Block Everyone</button>
   </form>

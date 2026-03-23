@@ -22,7 +22,7 @@ class TestIndex:
 
     def test_returns_html(self, client):
         res = client.get("/")
-        assert b"X List Bulk Blocker" in res.data
+        assert b"List Bulk Blocker" in res.data
 
     def test_content_type_html(self, client):
         res = client.get("/")

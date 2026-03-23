@@ -150,6 +150,39 @@ details[open] summary { border-bottom: 1.5px solid #e7e9ea; }
   font-size: 14px; color: #991b1b;
 }
 
+/* ── Delay slider ─────────────────────────────────────────────────────────────── */
+.delay-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.delay-slider { flex: 1; accent-color: #1d9bf0; cursor: pointer; }
+.delay-val { font-size: 14px; font-weight: 600; color: #1d9bf0; min-width: 44px; }
+
+/* ── Acknowledgement checkbox ──────────────────────────────────────────── */
+.ack-label {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: 12.5px; color: #444; line-height: 1.55;
+  margin: 18px 0 12px;
+  cursor: pointer;
+}
+.ack-label input[type=checkbox] { margin-top: 2px; accent-color: #1d9bf0; flex-shrink: 0; }
+
+/* ── Self-host callout ─────────────────────────────────────────────────── */
+.selfhost { border: 1.5px solid #e7e9ea; border-radius: 10px; margin-bottom: 18px; overflow: hidden; }
+.selfhost > summary {
+  padding: 10px 14px; cursor: pointer;
+  font-size: 13px; color: #536471; font-weight: 500;
+  user-select: none; list-style: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.selfhost > summary::before { content: '▶'; font-size: 10px; transition: transform .2s; }
+.selfhost[open] > summary::before { transform: rotate(90deg); }
+.selfhost-code {
+  background: #15202b; color: #8bd5ca;
+  border-radius: 8px; padding: 12px 14px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px; line-height: 1.7;
+  overflow-x: auto; white-space: pre;
+  margin: 0 0 4px;
+}
+
 /* ── Language toggle button ──────────────────────────────────────────────── */
 .lang-btn {
   margin-inline-start: auto;
