@@ -114,8 +114,10 @@ def fetch_tweet_authors(list_id: str, client: httpx.Client, log=print) -> dict[s
     Returns {username_lower: user_id}.
     """
     authors: dict[str, str] = {}
+    seen_ids: set[str] = set()
     cursor: str | None = None
     page = 0
+    MAX_PAGES = 150  # safety cap (~15 000 tweets)
 
     while True:
         page += 1
@@ -185,8 +187,9 @@ def fetch_tweet_authors(list_id: str, client: httpx.Client, log=print) -> dict[s
                          .get("rest_id")
                 )
                 uname = user.get("screen_name", "").lower()
-                if uid and uname and uid not in authors.values():
+                if uid and uname and uid not in seen_ids:
                     authors[uname] = uid
+                    seen_ids.add(uid)
                     entries_found += 1
 
         log(
@@ -194,7 +197,9 @@ def fetch_tweet_authors(list_id: str, client: httpx.Client, log=print) -> dict[s
             f"total unique so far: {len(authors)}"
         )
 
-        if not next_cursor or next_cursor == cursor:
+        if not next_cursor or next_cursor == cursor or page >= MAX_PAGES:
+            if page >= MAX_PAGES:
+                log(f"[INFO] Reached page cap ({MAX_PAGES}). Stopping pagination.")
             break
         cursor = next_cursor
 
@@ -253,7 +258,10 @@ def run_job(
     `log` receives each progress message as a string.
     """
     cookies = _parse_cookies(cookie_str)
+    auth_token = cookies.get("auth_token", "")
     ct0 = cookies.get("ct0", "")
+    if not auth_token:
+        raise RuntimeError("auth_token missing from cookies. Check your cookie values.")
     if not ct0:
         raise RuntimeError("ct0 missing from cookies. Check your cookie values.")
 

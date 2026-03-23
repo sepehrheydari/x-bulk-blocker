@@ -21,6 +21,7 @@ from x_bulk_block import parse_list_id, run_job
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+app.config["MAX_CONTENT_LENGTH"] = 4 * 1024  # 4 KB — all three fields are small
 
 limiter = Limiter(
     get_remote_address,
