@@ -101,18 +101,37 @@ class TestStart:
         assert "job_id" in data
 
 
-class TestStream:
+class TestPoll:
     def test_invalid_uuid_returns_404(self, client):
-        res = client.get("/stream/not-a-uuid")
+        res = client.get("/poll/not-a-uuid")
         assert res.status_code == 404
 
-    def test_unknown_job_returns_404(self, client):
-        res = client.get(f"/stream/{uuid.uuid4()}")
-        assert res.status_code == 404
+    def test_unknown_job_returns_done(self, client):
+        res = client.get(f"/poll/{uuid.uuid4()}")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["done"] is True
+        assert data["messages"] == []
 
     def test_sql_injection_attempt_returns_404(self, client):
-        res = client.get("/stream/'; DROP TABLE jobs; --")
+        res = client.get("/poll/'; DROP TABLE jobs; --")
         assert res.status_code == 404
+
+    def test_returns_cursor_and_messages(self, client):
+        with patch("app.run_job"):
+            start_res = client.post("/start", data={
+                "list_url": "https://x.com/i/lists/1234567890",
+                "auth_token": "a" * 40,
+                "ct0": "b" * 40,
+                "mode": "dry_run",
+            })
+        job_id = json.loads(start_res.data)["job_id"]
+        res = client.get(f"/poll/{job_id}?cursor=0")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert "messages" in data
+        assert "cursor" in data
+        assert "done" in data
 
 
 class TestSecurityHeaders:

@@ -4,7 +4,7 @@
     "builder": "DOCKERFILE"
   },
   "deploy": {
-    "startCommand": "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --worker-connections 50 --timeout 120",
+    "startCommand": "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120 --worker-class sync",
     "healthcheckPath": "/"
   }
 }

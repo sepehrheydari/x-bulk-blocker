@@ -5,24 +5,13 @@ Run with:  python app.py          (local)
 Then open: http://localhost:7070
 """
 
-# gevent monkey-patch MUST come first — before any other stdlib imports.
-# Without this, gevent workers can't yield during time.sleep() / queue.get()
-# and the SSE stream blocks/crashes immediately.
-try:
-    from gevent import monkey
-    monkey.patch_all()
-except ImportError:
-    pass  # running locally without gevent — fine, threaded mode handles it
-
-import json
 import os
-import queue
 import secrets
 import threading
 import time
 import uuid
 
-from flask import Flask, Response, render_template, request, stream_with_context
+from flask import Flask, Response, render_template, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -39,12 +28,13 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
-# In-memory job store: job_id -> {"queue": Queue, "created_at": float}
+# Job store: job_id -> {"messages": list, "done": bool, "created_at": float}
+# Messages are appended by the worker; the poll endpoint reads them by index.
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
 MAX_CONCURRENT_JOBS = 5
-_JOB_TTL = 1800  # seconds; hard cap on how long a stale job entry can linger
+_JOB_TTL = 1800  # seconds
 
 
 def _reap_stale_jobs() -> None:
@@ -91,7 +81,6 @@ def start():
     ct0        = request.form.get("ct0",        "").strip()
     dry_run    = request.form.get("mode") == "dry_run"
 
-    # Hard length caps to prevent oversized payloads
     if len(list_url) > 300 or len(auth_token) > 200 or len(ct0) > 200:
         return {"error": "Input too long."}, 400
 
@@ -107,68 +96,68 @@ def start():
         if len(_jobs) >= MAX_CONCURRENT_JOBS:
             return {"error": "Server is busy. Please try again shortly."}, 503
         job_id = str(uuid.uuid4())
-        q: queue.Queue = queue.Queue()
-        _jobs[job_id] = {"queue": q, "created_at": time.monotonic()}
+        _jobs[job_id] = {
+            "messages": [],
+            "done": False,
+            "created_at": time.monotonic(),
+        }
 
     cookie_str = f"auth_token={auth_token}; ct0={ct0}"
 
     def worker():
         def log(msg: str):
-            q.put({"type": "log", "msg": msg})
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id]["messages"].append({"type": "log", "msg": msg})
 
         try:
             run_job(list_id, cookie_str, dry_run=dry_run, log=log)
         except RuntimeError as exc:
-            q.put({"type": "error", "msg": str(exc)})
-        except Exception:
-            q.put({"type": "error", "msg": "An unexpected error occurred. Please try again."})
-        finally:
-            q.put({"type": "done"})
             with _jobs_lock:
-                _jobs.pop(job_id, None)
+                if job_id in _jobs:
+                    _jobs[job_id]["messages"].append({"type": "error", "msg": str(exc)})
+        except Exception:
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id]["messages"].append(
+                        {"type": "error", "msg": "An unexpected error occurred. Please try again."}
+                    )
+        finally:
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id]["done"] = True
 
     threading.Thread(target=worker, daemon=True).start()
     return {"job_id": job_id}
 
 
-@app.route("/stream/<job_id>")
-def stream(job_id: str):
-    # Reject anything that isn't a well-formed UUID to prevent probing
+@app.route("/poll/<job_id>")
+def poll(job_id: str):
+    """
+    Polling endpoint — returns buffered log messages from `cursor` onwards.
+    The frontend calls this every 500 ms instead of using SSE/EventSource.
+    This avoids all proxy-buffering issues (HF Spaces, Render, Cloudflare, etc.).
+    """
     try:
         uuid.UUID(job_id)
     except ValueError:
-        return "Job not found", 404
+        return {"messages": [], "done": True}, 404
+
+    cursor = request.args.get("cursor", 0, type=int)
 
     with _jobs_lock:
         entry = _jobs.get(job_id)
-    if not entry:
-        return "Job not found", 404
+        if not entry:
+            # Job finished and was reaped, or never existed
+            return {"messages": [], "done": True}
+        messages = entry["messages"][cursor:]
+        done = entry["done"]
 
-    q = entry["queue"]
-
-    def generate():
-        # Send an immediate keepalive so the proxy/browser opens the stream
-        yield ": keepalive\n\n"
-        while True:
-            try:
-                msg = q.get(timeout=15)
-            except Exception:
-                # Send a heartbeat comment to keep the connection alive through proxies
-                yield ": ping\n\n"
-                continue
-            yield f"data: {json.dumps(msg)}\n\n"
-            if msg.get("type") in ("done", "error"):
-                break
-
-    return Response(
-        stream_with_context(generate()),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "X-Accel-Buffering": "no",
-            "Transfer-Encoding": "chunked",
-        },
-    )
+    return {
+        "messages": messages,
+        "done": done,
+        "cursor": cursor + len(messages),
+    }
 
 
 if __name__ == "__main__":

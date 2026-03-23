@@ -24,6 +24,56 @@ function appendLog(msg) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+// Poll /poll/<jobId>?cursor=N every 500 ms.
+// This works through every reverse proxy (HF Spaces, Cloudflare, Render, etc.)
+// because it is plain JSON — no persistent connection, no buffering issues.
+function startPolling(jobId) {
+  let cursor = 0;
+  let hasError = false;
+
+  async function tick() {
+    let data;
+    try {
+      const res = await fetch('/poll/' + jobId + '?cursor=' + cursor);
+      data = await res.json();
+    } catch {
+      // Network blip — retry in 1 s
+      setTimeout(tick, 1000);
+      return;
+    }
+
+    for (const msg of data.messages) {
+      if (msg.type === 'log') {
+        appendLog(msg.msg);
+      } else if (msg.type === 'error') {
+        hasError = true;
+        appendLog('[ERROR] ' + msg.msg);
+        errBanner.textContent = '❌ ' + msg.msg;
+        errBanner.style.display = 'block';
+        statusBadge.textContent = 'Error';
+      }
+    }
+    cursor = data.cursor;
+
+    if (data.done) {
+      if (!hasError) {
+        const doneLines = [...logEl.querySelectorAll('.l-done')];
+        const doneText = doneLines.length ? doneLines[doneLines.length - 1].textContent : 'Finished.';
+        doneBanner.textContent = '✅ ' + doneText;
+        doneBanner.style.display = 'block';
+        statusBadge.textContent = 'Done';
+      }
+      btn.disabled = false;
+      btn.textContent = hasError ? '🚀 Try Again' : '🚀 Run Again';
+      return; // stop polling
+    }
+
+    setTimeout(tick, 500);
+  }
+
+  tick();
+}
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   btn.disabled = true;
@@ -54,36 +104,5 @@ form.addEventListener('submit', async (e) => {
     return;
   }
 
-  const es = new EventSource('/stream/' + json.job_id);
-
-  es.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === 'log') {
-      appendLog(msg.msg);
-    } else if (msg.type === 'error') {
-      appendLog('[ERROR] ' + msg.msg);
-      errBanner.textContent = '❌ ' + msg.msg;
-      errBanner.style.display = 'block';
-      statusBadge.textContent = 'Error';
-      es.close();
-      btn.disabled = false; btn.textContent = '🚀 Try Again';
-    } else if (msg.type === 'done') {
-      const doneLines = [...logEl.querySelectorAll('.l-done')];
-      const doneText = doneLines.length ? doneLines[doneLines.length - 1].textContent : 'Finished.';
-      doneBanner.textContent = '✅ ' + doneText;
-      doneBanner.style.display = 'block';
-      statusBadge.textContent = 'Done';
-      es.close();
-      btn.disabled = false; btn.textContent = '🚀 Run Again';
-    }
-  };
-
-  es.onerror = () => {
-    appendLog('[ERROR] Connection lost.');
-    errBanner.textContent = '❌ Connection to server lost.';
-    errBanner.style.display = 'block';
-    statusBadge.textContent = 'Error';
-    es.close();
-    btn.disabled = false; btn.textContent = '🚀 Try Again';
-  };
+  startPolling(json.job_id);
 });
