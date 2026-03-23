@@ -173,6 +173,7 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
 
     Unlike fetch_tweet_authors(), this returns every member regardless of
     when they last tweeted — so a 1,200-member list returns all 1,200.
+    Falls back to fetch_tweet_authors() if the members endpoint returns nothing.
     """
     query_id = _discover_query_id("ListMembers", client)
     url = f"https://x.com/i/api/graphql/{query_id}/ListMembers"
@@ -205,6 +206,12 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
             )
 
         data = resp.json()
+
+        # Diagnostic on page 1: log response shape so we can detect API changes
+        if page == 1:
+            list_obj = data.get("data", {}).get("list", {})
+            log(f"[DEBUG] ListMembers response keys: {list(list_obj.keys())}")
+
         instructions = (
             data.get("data", {})
                 .get("list", {})
@@ -221,19 +228,42 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
                 entry_id = entry.get("entryId", "")
                 content = entry.get("content", {})
 
-                if "cursor-bottom" in entry_id or "cursor-top" in entry_id:
+                # Detect cursor entries — check both entryId pattern AND cursorType field
+                cursor_type = content.get("cursorType", "")
+                is_cursor = (
+                    "cursor-bottom" in entry_id or "cursor-top" in entry_id
+                    or cursor_type in ("Bottom", "Top")
+                )
+                if is_cursor:
                     val = content.get("value")
-                    if "cursor-bottom" in entry_id and val:
+                    if ("cursor-bottom" in entry_id or cursor_type == "Bottom") and val:
                         next_cursor = val
                     continue
 
+                # Try multiple known response shapes for user entries
+                # Shape 1: content.itemContent.user_results.result  (most common)
                 user_result = (
                     content.get("itemContent", {})
                            .get("user_results", {})
                            .get("result", {})
                 )
-                uid = user_result.get("rest_id") or user_result.get("legacy", {}).get("id_str")
+                # Shape 2: content.user_results.result  (seen in some ListMembers responses)
+                if not user_result:
+                    user_result = (
+                        content.get("user_results", {})
+                               .get("result", {})
+                    )
+
+                uid = (
+                    user_result.get("rest_id")
+                    or user_result.get("legacy", {}).get("id_str")
+                )
                 uname = user_result.get("legacy", {}).get("screen_name", "").lower()
+
+                if page == 1 and entries_found == 0 and not uid:
+                    # Dump first non-cursor entry on page 1 to help diagnose wrong path
+                    log(f"[DEBUG] First entry shape: entryId={entry_id!r}, "
+                        f"content keys={list(content.keys())}")
 
                 if uid and uname and uid not in seen_ids:
                     members[uname] = uid
@@ -245,13 +275,25 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
             f"total so far: {len(members)}"
         )
 
+        # If page 1 returned nothing at all, the API path is wrong — bail fast
+        if page == 1 and entries_found == 0 and not next_cursor:
+            break
+
         if not next_cursor or next_cursor == cursor or page >= MAX_PAGES:
             if page >= MAX_PAGES:
                 log(f"[INFO] Reached page cap ({MAX_PAGES}). Stopping pagination.")
             break
         cursor = next_cursor
 
+    if not members:
+        log(
+            "[WARN] ListMembers returned 0 results — falling back to tweet-timeline method "
+            "(may find fewer users than actual list size)."
+        )
+        return fetch_tweet_authors(list_id, client, log=log)
+
     return members
+
 
 
 def _parse_cookies(cookie_str: str) -> dict[str, str]:

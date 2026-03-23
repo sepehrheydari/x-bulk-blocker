@@ -421,12 +421,14 @@ class TestFetchListMembers:
     def test_uses_cached_query_id_on_second_call(self):
         _mock_discovery()
         respx.get(_LIST_MEMBERS_URL).mock(
-            return_value=httpx.Response(200, json=_make_members_response([]))
+            return_value=httpx.Response(200, json=_make_members_response(
+                [_make_member_entry("alice", "111")]
+            ))
         )
         with _make_client() as client:
             fetch_list_members("123", client)
             fetch_list_members("456", client)
-        # main page and bundle each fetched only once
+        # main page and bundle each fetched only once (cached after first call)
         assert respx.calls.call_count == 4  # discovery×2 + members×2
 
     @respx.mock
