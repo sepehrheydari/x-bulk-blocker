@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>X Bulk Blocker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -13,31 +16,33 @@
     <div class="logo">
       <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.911-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
     </div>
-    <h1>X List Bulk Blocker</h1>
+    <h1 data-i18n="title">X List Bulk Blocker</h1>
+    <button id="lang-btn" class="lang-btn" aria-label="Switch language">فارسی</button>
   </div>
-  <p class="subtitle">Block every member of any public X list.<br>No API keys or developer account needed — just your browser cookies.</p>
+  <p class="subtitle" data-i18n-html="subtitle">Block every member of any public X list.<br>No API keys or developer account needed — just your browser cookies.</p>
 
-  <div style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;padding:12px 16px;font-size:12.5px;color:#92400e;margin-bottom:28px;line-height:1.55;">
+  <div style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;padding:12px 16px;font-size:12.5px;color:#92400e;margin-bottom:28px;line-height:1.55;" data-i18n-html="privacy">
     🔒 <strong>Privacy:</strong> Your cookies are used only to call X on your behalf and are <strong>never stored or logged</strong> on this server. Use HTTPS to keep them private in transit. Cookies are cleared from memory as soon as your job finishes.
   </div>
 
   <form id="form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <!-- Step 1 -->
     <div class="step">
-      <div class="step-label"><span class="badge">1</span> X List URL</div>
+      <div class="step-label"><span class="badge">1</span> <span data-i18n="step1_label">X List URL</span></div>
       <input type="text" id="list_url" name="list_url"
-             placeholder="https://x.com/i/lists/1992639069235695952" required maxlength="300" autocomplete="off" />
+             placeholder="https://x.com/i/lists/1992639069235695952" required maxlength="300" autocomplete="off" data-i18n-placeholder="list_url_placeholder" />
     </div>
 
     <!-- Step 2 -->
     <div class="step">
-      <div class="step-label"><span class="badge">2</span> Your X Cookies</div>
+      <div class="step-label"><span class="badge">2</span> <span data-i18n="step2_label">Your X Cookies</span></div>
 
       <details>
-        <summary>How to get your cookies from Chrome (click to expand)</summary>
+        <summary data-i18n="guide_summary">How to get your cookies from Chrome (click to expand)</summary>
         <div class="guide">
-          <ol>
+          <div data-i18n-html="guide_steps"><ol>
             <li>Open <strong>x.com</strong> in <strong>Google Chrome</strong> and make sure you are <strong>logged in</strong>.</li>
             <li>Press <kbd>F12</kbd> (Windows/Linux) or <kbd>⌘ Opt I</kbd> (Mac) to open DevTools.</li>
             <li>Click the <strong>Application</strong> tab at the top of DevTools.<br>
@@ -46,49 +51,49 @@
             <li>In the table, find the row named <code>auth_token</code>. Click on it and copy the long text in the <strong>Value</strong> column.</li>
             <li>Find the row named <code>ct0</code> and copy its <strong>Value</strong> too.</li>
             <li>Paste each value in the fields below.</li>
-          </ol>
-          <div class="tip">🔒 Your cookies are sent directly to X from your browser and are never stored anywhere by this tool.</div>
+          </ol></div>
+          <div class="tip" data-i18n-html="guide_tip">🔒 Your cookies are sent directly to X from your browser and are never stored anywhere by this tool.</div>
         </div>
       </details>
 
       <div class="field-row">
-        <input type="password" id="auth_token" name="auth_token" placeholder="Paste auth_token value here" required autocomplete="off" maxlength="200" />
-        <p class="field-hint">auth_token — found in Cookies → https://x.com</p>
+        <input type="password" id="auth_token" name="auth_token" placeholder="Paste auth_token value here" required autocomplete="off" maxlength="200" data-i18n-placeholder="auth_token_placeholder" />
+        <p class="field-hint" data-i18n="auth_token_hint">auth_token — found in Cookies → https://x.com</p>
       </div>
       <div class="field-row">
-        <input type="password" id="ct0" name="ct0" placeholder="Paste ct0 value here" required autocomplete="off" maxlength="200" />
-        <p class="field-hint">ct0 — found in Cookies → https://x.com</p>
+        <input type="password" id="ct0" name="ct0" placeholder="Paste ct0 value here" required autocomplete="off" maxlength="200" data-i18n-placeholder="ct0_placeholder" />
+        <p class="field-hint" data-i18n="ct0_hint">ct0 — found in Cookies → https://x.com</p>
       </div>
     </div>
 
     <!-- Step 3 -->
     <div class="step">
-      <div class="step-label"><span class="badge">3</span> Mode</div>
+      <div class="step-label"><span class="badge">3</span> <span data-i18n="step3_label">Mode</span></div>
       <div class="radio-group">
         <label class="radio-card">
           <input type="radio" name="mode" value="dry_run" checked />
           <div>
-            <div class="rc-title">👁 Preview only (recommended first)</div>
-            <div class="rc-desc">Shows who would be blocked — no action taken. Safe to run first to verify.</div>
+            <div class="rc-title" data-i18n="dry_run_title">👁 Preview only (recommended first)</div>
+            <div class="rc-desc" data-i18n="dry_run_desc">Shows who would be blocked — no action taken. Safe to run first to verify.</div>
           </div>
         </label>
         <label class="radio-card">
           <input type="radio" name="mode" value="block" />
           <div>
-            <div class="rc-title">🚫 Block everyone</div>
-            <div class="rc-desc">Blocks all members of the list. ~13 minutes for 500 users.</div>
+            <div class="rc-title" data-i18n="block_title">🚫 Block everyone</div>
+            <div class="rc-desc" data-i18n="block_desc">Blocks all members of the list. ~13 minutes for 500 users.</div>
           </div>
         </label>
       </div>
     </div>
 
-    <button type="submit" id="start-btn">🚀 Start</button>
+    <button type="submit" id="start-btn" data-i18n="start_btn">🚀 Start</button>
   </form>
 
   <!-- Progress -->
   <div id="progress">
     <div class="prog-header">
-      <span class="prog-title">Live Progress</span>
+      <span class="prog-title" data-i18n="progress_title">Live Progress</span>
       <span id="status-badge">Running…</span>
     </div>
     <div id="log"></div>

@@ -149,3 +149,41 @@ details[open] summary { border-bottom: 1.5px solid #e7e9ea; }
   background: #fff1f2; border: 1.5px solid #fca5a5;
   font-size: 14px; color: #991b1b;
 }
+
+/* ── Language toggle button ──────────────────────────────────────────────── */
+.lang-btn {
+  margin-inline-start: auto;
+  background: none;
+  border: 1.5px solid #cfd9de;
+  border-radius: 20px;
+  padding: 5px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d9bf0;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.lang-btn:hover { background: #f0f9ff; border-color: #1d9bf0; }
+
+/* ── RTL (Persian) overrides ─────────────────────────────────────────────── */
+[dir="rtl"] {
+  font-family: 'Vazirmatn', Tahoma, 'Segoe UI', Arial, sans-serif;
+}
+[dir="rtl"] .guide ol {
+  padding-left: 0;
+  padding-right: 18px;
+}
+[dir="rtl"] summary::before {
+  transform: rotate(180deg);
+}
+[dir="rtl"] details[open] summary::before {
+  transform: rotate(90deg);
+}
+/* Input values are always Latin (URLs, tokens) — keep them LTR in both layouts */
+[dir="rtl"] input[type="text"],
+[dir="rtl"] input[type="password"] {
+  direction: ltr;
+  text-align: left;
+}

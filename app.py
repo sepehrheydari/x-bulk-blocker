@@ -14,12 +14,20 @@ import uuid
 from flask import Flask, Response, render_template, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from x_bulk_block import parse_list_id, run_job
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024  # 4 KB — all three fields are small
+
+# Trust one proxy hop (HF Spaces / Render / Railway) so rate limiting
+# uses the real client IP instead of the reverse-proxy IP.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+csrf = CSRFProtect(app)
 
 limiter = Limiter(
     get_remote_address,

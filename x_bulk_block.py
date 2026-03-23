@@ -105,7 +105,6 @@ _MEMBERS_FEATURES = json.dumps({
     "responsive_web_graphql_timeline_navigation_enabled": True,
     "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
     "creator_subscriptions_tweet_preview_api_enabled": True,
-    "responsive_web_graphql_exclude_directive_enabled": True,
     "rweb_tipjar_consumption_enabled": True,
     "responsive_web_edit_tweet_api_enabled": True,
     "freedom_of_speech_not_reach_fetch_enabled": True,
@@ -230,30 +229,6 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
             )
 
         data = resp.json()
-
-        # Diagnostic on page 1: log instruction structure to pinpoint API changes
-        if page == 1:
-            list_obj = data.get("data", {}).get("list", {})
-            log(f"[DEBUG] ListMembers response keys: {list(list_obj.keys())}")
-            instructions_raw = (
-                list_obj.get("members_timeline", {})
-                        .get("timeline", {})
-                        .get("instructions", [])
-            )
-            for i, inst in enumerate(instructions_raw):
-                inst_type = inst.get("type", "unknown")
-                entries_count = len(inst.get("entries", []))
-                log(f"[DEBUG] Instruction {i}: type={inst_type!r}, entries={entries_count}")
-                if entries_count > 0:
-                    fe = inst["entries"][0]
-                    fc = fe.get("content", {})
-                    ic = fc.get("itemContent", {})
-                    ur = ic.get("user_results", {})
-                    log(f"[DEBUG] First entry: entryId={fe.get('entryId')!r}, "
-                        f"content_keys={list(fc.keys())}, "
-                        f"itemContent_keys={list(ic.keys())}, "
-                        f"user_results_keys={list(ur.keys())}, "
-                        f"result_keys={list(ur.get('result', {}).keys())}")
 
         instructions = (
             data.get("data", {})
@@ -623,7 +598,7 @@ def run_job(
         log(f"[INFO] {len(id_map)} member(s) found.")
 
         if not id_map:
-            log("[INFO] No tweet authors found. Nothing to do.")
+            log("[INFO] No members found. Nothing to do.")
             return
 
         if dry_run:
