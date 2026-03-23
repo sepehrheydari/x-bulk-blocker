@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py x_bulk_block.py ./
 COPY templates/ templates/
+COPY static/ static/
 
 # Run as a non-root user — least-privilege principle
 RUN adduser --disabled-password --gecos "" appuser \
