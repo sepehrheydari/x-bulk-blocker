@@ -1,0 +1,6 @@
+services:
+  blocker:
+    build: .
+    ports:
+      - "7070:7070"
+    restart: unless-stopped

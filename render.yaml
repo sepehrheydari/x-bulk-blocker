@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: x-bulk-blocker
+    runtime: docker
+    plan: free          # free tier is fine; upgrade for always-on
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 10000    # Render's default internal port
