@@ -93,7 +93,8 @@ def start():
         return {"error": str(exc)}, 400
 
     with _jobs_lock:
-        if len(_jobs) >= MAX_CONCURRENT_JOBS:
+        active = sum(1 for v in _jobs.values() if not v["done"])
+        if active >= MAX_CONCURRENT_JOBS:
             return {"error": "Server is busy. Please try again shortly."}, 503
         job_id = str(uuid.uuid4())
         _jobs[job_id] = {
