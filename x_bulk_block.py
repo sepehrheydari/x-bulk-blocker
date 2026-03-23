@@ -41,8 +41,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Delay between block requests (seconds).
-# 0.5s → ~4 min for 400 users using the internal web API.
-BLOCK_DELAY = 0.5
+# 1.5s → ~13 min for 500 users. Lower values trigger session revocation (401).
+BLOCK_DELAY = 1.5
 
 
 def parse_list_id(list_arg: str) -> str:
@@ -214,28 +214,58 @@ def bulk_block(client: httpx.Client, id_map: dict[str, str], log=print) -> None:
     total = len(id_map)
     success = skipped = failed = 0
 
+    # 429 backoff schedule: wait these many seconds before each retry attempt
+    _RATE_LIMIT_WAITS = [60, 120, 300]
+
     for idx, (username, user_id) in enumerate(id_map.items(), start=1):
         try:
             resp = client.post(_BLOCK_URL, data={"user_id": user_id})
+
+            if resp.status_code == 401:
+                remaining = total - idx + 1
+                log(
+                    f"[{idx}/{total}] @{username} ... SESSION EXPIRED (401) — "
+                    f"Twitter revoked your auth token. "
+                    f"{success} blocked so far, {remaining} remaining. "
+                    "Refresh your cookies and run again."
+                )
+                break
+
+            if resp.status_code == 429:
+                # Exponential-ish backoff — up to 3 retries
+                final_resp = None
+                for wait in _RATE_LIMIT_WAITS:
+                    log(f"[{idx}/{total}] @{username} ... RATE LIMITED — waiting {wait}s …")
+                    time.sleep(wait)
+                    retry = client.post(_BLOCK_URL, data={"user_id": user_id})
+                    if retry.status_code == 401:
+                        log(
+                            f"[{idx}/{total}] @{username} ... SESSION EXPIRED (401) — "
+                            f"{success} blocked so far, {total - idx + 1} remaining. "
+                            "Refresh your cookies and run again."
+                        )
+                        return
+                    if retry.status_code != 429:
+                        final_resp = retry
+                        break
+                if final_resp is None:
+                    log(f"[{idx}/{total}] @{username} ... FAILED after {len(_RATE_LIMIT_WAITS)} retries (still 429)")
+                    failed += 1
+                    if idx < total:
+                        time.sleep(BLOCK_DELAY)
+                    continue
+                resp = final_resp
+
             if resp.status_code == 200:
                 log(f"[{idx}/{total}] @{username} ... BLOCKED")
                 success += 1
             elif resp.status_code in (403, 404):
                 log(f"[{idx}/{total}] @{username} ... SKIPPED (already blocked or deleted)")
                 skipped += 1
-            elif resp.status_code == 429:
-                log(f"[{idx}/{total}] @{username} ... RATE LIMITED — waiting 60s …")
-                time.sleep(60)
-                resp2 = client.post(_BLOCK_URL, data={"user_id": user_id})
-                if resp2.status_code == 200:
-                    log(f"[{idx}/{total}] @{username} ... BLOCKED (retry)")
-                    success += 1
-                else:
-                    log(f"[{idx}/{total}] @{username} ... FAILED after retry ({resp2.status_code})")
-                    failed += 1
             else:
                 log(f"[{idx}/{total}] @{username} ... FAILED ({resp.status_code})")
                 failed += 1
+
         except httpx.RequestError as exc:
             log(f"[{idx}/{total}] @{username} ... FAILED (network: {exc})")
             failed += 1
@@ -295,7 +325,7 @@ def run_job(
             for username, user_id in id_map.items():
                 log(f"        @{username} (id={user_id})")
             est = len(id_map) * BLOCK_DELAY
-            log(f"[DONE] Would block {len(id_map)} user(s) in ~{est:.0f}s ({est/60:.1f} min).")
+            log(f"[DONE] Would block {len(id_map)} user(s) in ~{est:.0f}s (~{est/60:.0f} min at 1 block/{BLOCK_DELAY}s).")
             return
 
         bulk_block(client, id_map, log=log)

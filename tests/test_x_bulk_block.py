@@ -259,7 +259,7 @@ class TestBulkBlock:
                 bulk_block(client, {"alice": "111"}, log=logs.append)
 
         assert any("RATE LIMITED" in m for m in logs)
-        assert any("BLOCKED (retry)" in m for m in logs)
+        assert any("BLOCKED" in m for m in logs)
 
     @respx.mock
     def test_rate_limit_retry_fails_counted(self):
@@ -273,7 +273,24 @@ class TestBulkBlock:
             with _make_client() as client:
                 bulk_block(client, {"alice": "111"}, log=logs.append)
 
-        assert any("FAILED after retry" in m for m in logs)
+        assert any("FAILED" in m for m in logs)
+
+    @respx.mock
+    def test_401_mid_run_aborts_with_resume_hint(self):
+        route = respx.post(_BLOCK_URL)
+        route.side_effect = [
+            httpx.Response(200, json={}),
+            httpx.Response(401, json={}),
+        ]
+        logs = []
+        with patch("x_bulk_block.time.sleep"):
+            with _make_client() as client:
+                bulk_block(client, {"alice": "111", "bob": "222"}, log=logs.append)
+
+        assert any("SESSION EXPIRED" in m for m in logs)
+        assert any("Refresh your cookies" in m for m in logs)
+        # summary still emitted
+        assert any("[DONE]" in m for m in logs)
 
     @respx.mock
     def test_network_error_counted_as_failed(self):
