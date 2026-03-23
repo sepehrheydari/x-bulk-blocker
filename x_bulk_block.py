@@ -96,6 +96,146 @@ _FEATURES = json.dumps({
     "responsive_web_enhance_cards_enabled": False,
 }, separators=(",", ":"))
 
+# ── Dynamic query ID discovery ────────────────────────────────────────────────
+# X's internal GraphQL query IDs are embedded in their JS bundles and rotate
+# occasionally. We discover them at runtime so the tool never breaks silently.
+_query_id_cache: dict[str, str] = {}
+_BUNDLE_RE = re.compile(
+    r'https://abs\.twimg\.com/responsive-web/client-web/main\.[a-f0-9]+\.js'
+)
+
+
+def _discover_query_id(operation_name: str, client: httpx.Client) -> str:
+    """
+    Fetch X's main JS bundle and extract the GraphQL queryId for `operation_name`.
+    Result is cached in memory for the lifetime of the process.
+    """
+    cached = _query_id_cache.get(operation_name)
+    if cached:
+        return cached
+
+    # Step 1: fetch x.com home page to find the bundle URL
+    try:
+        page_resp = client.get("https://x.com/", headers={"Accept": "text/html"}, timeout=30)
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Could not reach x.com to discover query IDs: {exc}") from exc
+
+    bundle_match = _BUNDLE_RE.search(page_resp.text)
+    if not bundle_match:
+        raise RuntimeError(
+            "Could not locate X's main JS bundle. "
+            "X may have changed their page structure — please open an issue."
+        )
+    bundle_url = bundle_match.group(0)
+
+    # Step 2: fetch the bundle (public CDN, no auth required)
+    try:
+        bundle_resp = client.get(bundle_url, timeout=60)
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Could not fetch X's JS bundle: {exc}") from exc
+
+    # Step 3: extract queryId for the requested operation
+    qid_match = re.search(
+        rf'queryId:"([^"]+)",operationName:"{re.escape(operation_name)}"',
+        bundle_resp.text,
+    )
+    if not qid_match:
+        raise RuntimeError(
+            f"Could not find query ID for '{operation_name}' in X's JS bundle. "
+            "X may have renamed this endpoint."
+        )
+    query_id = qid_match.group(1)
+    _query_id_cache[operation_name] = query_id
+    return query_id
+
+
+def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[str, str]:
+    """
+    Fetch ALL members of a list via X's internal GraphQL ListMembers endpoint.
+    Returns {username_lower: user_id}.
+
+    Unlike fetch_tweet_authors(), this returns every member regardless of
+    when they last tweeted — so a 1,200-member list returns all 1,200.
+    """
+    query_id = _discover_query_id("ListMembers", client)
+    url = f"https://x.com/i/api/graphql/{query_id}/ListMembers"
+
+    members: dict[str, str] = {}
+    seen_ids: set[str] = set()
+    cursor: str | None = None
+    page = 0
+    MAX_PAGES = 150  # 100 members/page × 150 = up to 15,000 members
+
+    while True:
+        page += 1
+        variables = json.dumps({
+            "listId": list_id,
+            "count": 100,
+            **({"cursor": cursor} if cursor else {}),
+        }, separators=(",", ":"))
+
+        params = {"variables": variables, "features": _FEATURES}
+        resp = client.get(url, params=params)
+
+        if resp.status_code == 429:
+            log("[INFO] Read rate limit hit — waiting 60s …")
+            time.sleep(60)
+            resp = client.get(url, params=params)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"X API returned HTTP {resp.status_code}. "
+                "Your cookies may have expired — refresh them from the browser."
+            )
+
+        data = resp.json()
+        instructions = (
+            data.get("data", {})
+                .get("list", {})
+                .get("members_timeline", {})
+                .get("timeline", {})
+                .get("instructions", [])
+        )
+
+        next_cursor = None
+        entries_found = 0
+
+        for instruction in instructions:
+            for entry in instruction.get("entries", []):
+                entry_id = entry.get("entryId", "")
+                content = entry.get("content", {})
+
+                if "cursor-bottom" in entry_id or "cursor-top" in entry_id:
+                    val = content.get("value")
+                    if "cursor-bottom" in entry_id and val:
+                        next_cursor = val
+                    continue
+
+                user_result = (
+                    content.get("itemContent", {})
+                           .get("user_results", {})
+                           .get("result", {})
+                )
+                uid = user_result.get("rest_id") or user_result.get("legacy", {}).get("id_str")
+                uname = user_result.get("legacy", {}).get("screen_name", "").lower()
+
+                if uid and uname and uid not in seen_ids:
+                    members[uname] = uid
+                    seen_ids.add(uid)
+                    entries_found += 1
+
+        log(
+            f"[INFO] Page {page}: {entries_found} member(s), "
+            f"total so far: {len(members)}"
+        )
+
+        if not next_cursor or next_cursor == cursor or page >= MAX_PAGES:
+            if page >= MAX_PAGES:
+                log(f"[INFO] Reached page cap ({MAX_PAGES}). Stopping pagination.")
+            break
+        cursor = next_cursor
+
+    return members
+
 
 def _parse_cookies(cookie_str: str) -> dict[str, str]:
     """Parse 'auth_token=XX; ct0=YY' into a dict."""
@@ -312,9 +452,9 @@ def run_job(
         headers=headers, cookies=cookies, verify=True,
         follow_redirects=True, timeout=30,
     ) as client:
-        log("[INFO] Fetching tweet authors from list timeline …")
-        id_map = fetch_tweet_authors(list_id, client, log=log)
-        log(f"[INFO] {len(id_map)} unique author(s) found.")
+        log("[INFO] Fetching list members …")
+        id_map = fetch_list_members(list_id, client, log=log)
+        log(f"[INFO] {len(id_map)} member(s) found.")
 
         if not id_map:
             log("[INFO] No tweet authors found. Nothing to do.")

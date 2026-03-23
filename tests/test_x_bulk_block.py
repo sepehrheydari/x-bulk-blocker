@@ -1,5 +1,5 @@
 """
-Integration tests for fetch_tweet_authors and bulk_block.
+Integration tests for fetch_tweet_authors, fetch_list_members, and bulk_block.
 HTTP is mocked via respx so no real network calls are made.
 """
 import json
@@ -11,12 +11,22 @@ import httpx
 import pytest
 import respx
 
+import x_bulk_block
 from x_bulk_block import (
     _LIST_TIMELINE_URL,
     bulk_block,
+    fetch_list_members,
     fetch_tweet_authors,
     run_job,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_query_id_cache():
+    """Reset the in-memory query ID cache between tests."""
+    x_bulk_block._query_id_cache.clear()
+    yield
+    x_bulk_block._query_id_cache.clear()
 
 _BLOCK_URL = "https://x.com/i/api/1.1/blocks/create.json"
 _COOKIE_STR = "auth_token=faketoken; ct0=fakect0"
@@ -313,6 +323,138 @@ class TestBulkBlock:
         assert any("[DONE]" in m for m in logs)
 
 
+# ── fetch_list_members ───────────────────────────────────────────────────────
+
+_MAIN_URL = "https://x.com/"
+_BUNDLE_URL = "https://abs.twimg.com/responsive-web/client-web/main.abc123.js"
+_TEST_QUERY_ID = "TEST_QID_MEMBERS"
+_LIST_MEMBERS_URL = f"https://x.com/i/api/graphql/{_TEST_QUERY_ID}/ListMembers"
+_BUNDLE_JS = f'...queryId:"{_TEST_QUERY_ID}",operationName:"ListMembers"...'
+
+
+def _make_member_entry(username: str, user_id: str) -> dict:
+    """Build a minimal ListMembers GraphQL entry."""
+    return {
+        "entryId": f"user-{user_id}",
+        "content": {
+            "itemContent": {
+                "user_results": {
+                    "result": {
+                        "rest_id": user_id,
+                        "legacy": {"screen_name": username, "id_str": user_id},
+                    }
+                }
+            }
+        },
+    }
+
+
+def _make_members_response(entries: list, cursor: Optional[str] = None) -> dict:
+    all_entries = list(entries)
+    if cursor:
+        all_entries.append({
+            "entryId": f"cursor-bottom-{cursor}",
+            "content": {"value": cursor},
+        })
+    return {
+        "data": {
+            "list": {
+                "members_timeline": {
+                    "timeline": {
+                        "instructions": [{"entries": all_entries}]
+                    }
+                }
+            }
+        }
+    }
+
+
+def _mock_discovery():
+    """Register respx mocks for the JS bundle discovery flow."""
+    respx.get(_MAIN_URL).mock(return_value=httpx.Response(
+        200, text=f'<html><script src="{_BUNDLE_URL}"></script></html>'
+    ))
+    respx.get(_BUNDLE_URL).mock(return_value=httpx.Response(200, text=_BUNDLE_JS))
+
+
+class TestFetchListMembers:
+    @respx.mock
+    def test_returns_all_members_single_page(self):
+        _mock_discovery()
+        entries = [_make_member_entry("Alice", "111"), _make_member_entry("Bob", "222")]
+        respx.get(_LIST_MEMBERS_URL).mock(
+            return_value=httpx.Response(200, json=_make_members_response(entries))
+        )
+        with _make_client() as client:
+            result = fetch_list_members("123", client)
+        assert result == {"alice": "111", "bob": "222"}
+
+    @respx.mock
+    def test_paginates_to_second_page(self):
+        _mock_discovery()
+        route = respx.get(_LIST_MEMBERS_URL)
+        route.side_effect = [
+            httpx.Response(200, json=_make_members_response(
+                [_make_member_entry("alice", "111")], cursor="next"
+            )),
+            httpx.Response(200, json=_make_members_response(
+                [_make_member_entry("bob", "222")]
+            )),
+        ]
+        with _make_client() as client:
+            result = fetch_list_members("123", client)
+        assert result == {"alice": "111", "bob": "222"}
+        assert route.call_count == 2
+
+    @respx.mock
+    def test_deduplicates_members(self):
+        _mock_discovery()
+        entries = [_make_member_entry("alice", "111"), _make_member_entry("Alice", "111")]
+        respx.get(_LIST_MEMBERS_URL).mock(
+            return_value=httpx.Response(200, json=_make_members_response(entries))
+        )
+        with _make_client() as client:
+            result = fetch_list_members("123", client)
+        assert len(result) == 1
+
+    @respx.mock
+    def test_uses_cached_query_id_on_second_call(self):
+        _mock_discovery()
+        respx.get(_LIST_MEMBERS_URL).mock(
+            return_value=httpx.Response(200, json=_make_members_response([]))
+        )
+        with _make_client() as client:
+            fetch_list_members("123", client)
+            fetch_list_members("456", client)
+        # main page and bundle each fetched only once
+        assert respx.calls.call_count == 4  # discovery×2 + members×2
+
+    @respx.mock
+    def test_401_raises_runtime_error(self):
+        _mock_discovery()
+        respx.get(_LIST_MEMBERS_URL).mock(return_value=httpx.Response(401, json={}))
+        with pytest.raises(RuntimeError, match="401"):
+            with _make_client() as client:
+                fetch_list_members("123", client)
+
+    @respx.mock
+    def test_rate_limit_then_success_retries(self):
+        _mock_discovery()
+        route = respx.get(_LIST_MEMBERS_URL)
+        route.side_effect = [
+            httpx.Response(429, json={}),
+            httpx.Response(200, json=_make_members_response(
+                [_make_member_entry("alice", "111")]
+            )),
+        ]
+        logs = []
+        with patch("x_bulk_block.time.sleep"):
+            with _make_client() as client:
+                result = fetch_list_members("123", client, log=logs.append)
+        assert result == {"alice": "111"}
+        assert any("rate limit" in m.lower() for m in logs)
+
+
 # ── run_job ───────────────────────────────────────────────────────────────────
 
 class TestRunJob:
@@ -324,38 +466,28 @@ class TestRunJob:
         with pytest.raises(RuntimeError, match="ct0 missing"):
             run_job("123", "auth_token=xyz")
 
-    @respx.mock
-    def test_dry_run_does_not_call_block_url(self):
-        block_route = respx.post(_BLOCK_URL)
-        entries = [_make_entry("alice", "111")]
-        respx.get(_LIST_TIMELINE_URL).mock(
-            return_value=httpx.Response(200, json=_make_timeline_response(entries))
-        )
+    @patch("x_bulk_block.fetch_list_members")
+    def test_dry_run_does_not_call_block_url(self, mock_fetch):
+        mock_fetch.return_value = {"alice": "111"}
         logs = []
         run_job("123", _COOKIE_STR, dry_run=True, log=logs.append)
 
-        assert not block_route.called
+        mock_fetch.assert_called_once()
         assert any("DRY-RUN" in m for m in logs)
         assert any("[DONE]" in m for m in logs)
 
-    @respx.mock
-    def test_empty_list_exits_early(self):
-        block_route = respx.post(_BLOCK_URL)
-        respx.get(_LIST_TIMELINE_URL).mock(
-            return_value=httpx.Response(200, json=_make_timeline_response([]))
-        )
+    @patch("x_bulk_block.fetch_list_members")
+    def test_empty_list_exits_early(self, mock_fetch):
+        mock_fetch.return_value = {}
         logs = []
         run_job("123", _COOKIE_STR, log=logs.append)
 
-        assert not block_route.called
         assert any("Nothing to do" in m for m in logs)
 
     @respx.mock
-    def test_full_block_run_end_to_end(self):
-        entries = [_make_entry("alice", "111"), _make_entry("bob", "222")]
-        respx.get(_LIST_TIMELINE_URL).mock(
-            return_value=httpx.Response(200, json=_make_timeline_response(entries))
-        )
+    @patch("x_bulk_block.fetch_list_members")
+    def test_full_block_run_end_to_end(self, mock_fetch):
+        mock_fetch.return_value = {"alice": "111", "bob": "222"}
         respx.post(_BLOCK_URL).mock(return_value=httpx.Response(200, json={}))
 
         logs = []
