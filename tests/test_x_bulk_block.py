@@ -499,14 +499,18 @@ class TestRunJob:
             run_job("123", "auth_token=xyz")
 
     @patch("x_bulk_block.fetch_list_members")
-    def test_dry_run_does_not_call_block_url(self, mock_fetch):
+    def test_run_job_always_blocks(self, mock_fetch):
+        """dry_run was removed — run_job always proceeds to bulk_block."""
         mock_fetch.return_value = {"alice": "111"}
         logs = []
-        run_job("123", _COOKIE_STR, dry_run=True, log=logs.append)
+        with respx.mock:
+            respx.post("https://x.com/i/api/1.1/blocks/ids.json").respond(200, json={"ids": [], "next_cursor": 0})
+            respx.get("https://x.com/i/api/1.1/blocks/ids.json").respond(200, json={"ids": [], "next_cursor": 0})
+            respx.post("https://x.com/i/api/1.1/blocks/create.json").respond(200, json={})
+            run_job("123", _COOKIE_STR, log=logs.append)
 
         mock_fetch.assert_called_once()
-        assert any("DRY-RUN" in m for m in logs)
-        assert any("[DONE]" in m for m in logs)
+        assert any("BLOCKED" in m for m in logs)
 
     @patch("x_bulk_block.fetch_list_members")
     def test_empty_list_exits_early(self, mock_fetch):

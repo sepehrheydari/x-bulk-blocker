@@ -87,7 +87,7 @@ def start():
     list_url   = request.form.get("list_url",   "").strip()
     auth_token = request.form.get("auth_token", "").strip()
     ct0        = request.form.get("ct0",        "").strip()
-    dry_run    = request.form.get("mode") == "dry_run"
+    dry_run    = False  # dry-run mode removed; always block
 
     if len(list_url) > 300 or len(auth_token) > 200 or len(ct0) > 200:
         return {"error": "Input too long."}, 400

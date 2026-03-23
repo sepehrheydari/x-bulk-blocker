@@ -75,31 +75,18 @@ class TestStart:
         })
         assert res.status_code == 400
 
-    def test_valid_dry_run_returns_job_id(self, client):
+    def test_valid_start_returns_job_id(self, client):
         with patch("app.run_job"):
             res = client.post("/start", data={
                 "list_url": "https://x.com/i/lists/1234567890",
                 "auth_token": "a" * 40,
                 "ct0": "b" * 40,
-                "mode": "dry_run",
             })
         assert res.status_code == 200
         data = json.loads(res.data)
         assert "job_id" in data
         # Must be a valid UUID
         uuid.UUID(data["job_id"])
-
-    def test_valid_block_mode_returns_job_id(self, client):
-        with patch("app.run_job"):
-            res = client.post("/start", data={
-                "list_url": "https://x.com/i/lists/1234567890",
-                "auth_token": "a" * 40,
-                "ct0": "b" * 40,
-                "mode": "block",
-            })
-        assert res.status_code == 200
-        data = json.loads(res.data)
-        assert "job_id" in data
 
 
 class TestPoll:
@@ -124,7 +111,6 @@ class TestPoll:
                 "list_url": "https://x.com/i/lists/1234567890",
                 "auth_token": "a" * 40,
                 "ct0": "b" * 40,
-                "mode": "dry_run",
             })
         job_id = json.loads(start_res.data)["job_id"]
         res = client.get(f"/poll/{job_id}?cursor=0")
