@@ -138,8 +138,15 @@ def stream(job_id: str):
     q = entry["queue"]
 
     def generate():
+        # Send an immediate keepalive so the proxy/browser opens the stream
+        yield ": keepalive\n\n"
         while True:
-            msg = q.get()
+            try:
+                msg = q.get(timeout=15)
+            except Exception:
+                # Send a heartbeat comment to keep the connection alive through proxies
+                yield ": ping\n\n"
+                continue
             yield f"data: {json.dumps(msg)}\n\n"
             if msg.get("type") in ("done", "error"):
                 break
@@ -147,7 +154,11 @@ def stream(job_id: str):
     return Response(
         stream_with_context(generate()),
         mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Transfer-Encoding": "chunked",
+        },
     )
 
 

@@ -20,6 +20,6 @@ EXPOSE 7070
 CMD gunicorn app:app \
     --bind 0.0.0.0:${PORT:-7070} \
     --workers 1 \
-    --threads 8 \
-    --timeout 120 \
-    --worker-class sync
+    --worker-class gevent \
+    --worker-connections 50 \
+    --timeout 120
