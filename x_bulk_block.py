@@ -305,16 +305,8 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
                 legacy = user_result.get("legacy") or {}
                 uname = legacy.get("screen_name", "").lower()
 
-                # Page-1 diagnostic: log what we actually extracted for first entry
-                if page == 1 and entries_found == 0 and not is_cursor:
-                    log(f"[DEBUG] First user parse: rest_id={user_result.get('rest_id')!r}, "
-                        f"legacy_type={type(user_result.get('legacy')).__name__}, "
-                        f"legacy_keys={list(legacy.keys())[:8]}, "
-                        f"screen_name={legacy.get('screen_name')!r}, "
-                        f"uid={uid!r}, uname={uname!r}")
-
-                if uid and uname and uid not in seen_ids:
-                    members[uname] = uid
+                if uid and uid not in seen_ids:
+                    members[uname or uid] = uid
                     seen_ids.add(uid)
                     entries_found += 1
 
