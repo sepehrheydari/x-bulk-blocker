@@ -70,6 +70,8 @@ _BEARER = (
 _LIST_TIMELINE_URL = (
     "https://x.com/i/api/graphql/BkauSnPUDQTeeJsxq17opA/ListLatestTweetsTimeline"
 )
+
+# Features for tweet-timeline queries
 _FEATURES = json.dumps({
     "rweb_tipjar_consumption_enabled": True,
     "responsive_web_graphql_exclude_directive_enabled": True,
@@ -94,6 +96,26 @@ _FEATURES = json.dumps({
     "longform_notetweets_rich_text_read_enabled": True,
     "longform_notetweets_inline_media_enabled": True,
     "responsive_web_enhance_cards_enabled": False,
+}, separators=(",", ":"))
+
+# Features for user/member queries — simpler set, no tweet-specific flags
+_MEMBERS_FEATURES = json.dumps({
+    "responsive_web_graphql_exclude_directive_enabled": True,
+    "verified_phone_label_enabled": False,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "responsive_web_graphql_exclude_directive_enabled": True,
+    "rweb_tipjar_consumption_enabled": True,
+    "responsive_web_edit_tweet_api_enabled": True,
+    "freedom_of_speech_not_reach_fetch_enabled": True,
+    "standardized_nudges_misinfo": True,
+    "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+    "responsive_web_enhance_cards_enabled": False,
+    "subscriptions_verification_info_verified_since_enabled": True,
+    "highlights_tweets_tab_ui_enabled": True,
+    "responsive_web_twitter_article_notes_tab_enabled": True,
+    "creator_subscriptions_footer_enabled": True,
 }, separators=(",", ":"))
 
 # ── Dynamic query ID discovery ────────────────────────────────────────────────
@@ -183,16 +205,18 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
     cursor: str | None = None
     page = 0
     MAX_PAGES = 150  # 100 members/page × 150 = up to 15,000 members
+    consecutive_empty = 0
 
     while True:
         page += 1
         variables = json.dumps({
             "listId": list_id,
             "count": 100,
+            "withSafetyModeUserFields": True,
             **({"cursor": cursor} if cursor else {}),
         }, separators=(",", ":"))
 
-        params = {"variables": variables, "features": _FEATURES}
+        params = {"variables": variables, "features": _MEMBERS_FEATURES}
         resp = client.get(url, params=params)
 
         if resp.status_code == 429:
@@ -207,10 +231,25 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
 
         data = resp.json()
 
-        # Diagnostic on page 1: log response shape so we can detect API changes
+        # Diagnostic on page 1: log instruction structure to pinpoint API changes
         if page == 1:
             list_obj = data.get("data", {}).get("list", {})
             log(f"[DEBUG] ListMembers response keys: {list(list_obj.keys())}")
+            instructions_raw = (
+                list_obj.get("members_timeline", {})
+                        .get("timeline", {})
+                        .get("instructions", [])
+            )
+            for i, inst in enumerate(instructions_raw):
+                inst_type = inst.get("type", "unknown")
+                entries_count = len(inst.get("entries", []))
+                log(f"[DEBUG] Instruction {i}: type={inst_type!r}, entries={entries_count}")
+                if entries_count > 0:
+                    fe = inst["entries"][0]
+                    fc = fe.get("content", {})
+                    log(f"[DEBUG] First entry: entryId={fe.get('entryId')!r}, "
+                        f"content_keys={list(fc.keys())}, "
+                        f"itemContent_keys={list(fc.get('itemContent', {}).keys())}")
 
         instructions = (
             data.get("data", {})
@@ -228,7 +267,7 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
                 entry_id = entry.get("entryId", "")
                 content = entry.get("content", {})
 
-                # Detect cursor entries — check both entryId pattern AND cursorType field
+                # Detect cursor entries
                 cursor_type = content.get("cursorType", "")
                 is_cursor = (
                     "cursor-bottom" in entry_id or "cursor-top" in entry_id
@@ -240,14 +279,13 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
                         next_cursor = val
                     continue
 
-                # Try multiple known response shapes for user entries
-                # Shape 1: content.itemContent.user_results.result  (most common)
+                # Shape 1: content.itemContent.user_results.result
                 user_result = (
                     content.get("itemContent", {})
                            .get("user_results", {})
                            .get("result", {})
                 )
-                # Shape 2: content.user_results.result  (seen in some ListMembers responses)
+                # Shape 2: content.user_results.result
                 if not user_result:
                     user_result = (
                         content.get("user_results", {})
@@ -260,11 +298,6 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
                 )
                 uname = user_result.get("legacy", {}).get("screen_name", "").lower()
 
-                if page == 1 and entries_found == 0 and not uid:
-                    # Dump first non-cursor entry on page 1 to help diagnose wrong path
-                    log(f"[DEBUG] First entry shape: entryId={entry_id!r}, "
-                        f"content keys={list(content.keys())}")
-
                 if uid and uname and uid not in seen_ids:
                     members[uname] = uid
                     seen_ids.add(uid)
@@ -275,8 +308,14 @@ def fetch_list_members(list_id: str, client: httpx.Client, log=print) -> dict[st
             f"total so far: {len(members)}"
         )
 
-        # If page 1 returned nothing at all, the API path is wrong — bail fast
-        if page == 1 and entries_found == 0 and not next_cursor:
+        if entries_found == 0:
+            consecutive_empty += 1
+        else:
+            consecutive_empty = 0
+
+        # Bail fast if 3 consecutive pages return no user entries
+        if consecutive_empty >= 3 and page >= 3:
+            log("[WARN] 3 consecutive empty pages — stopping ListMembers early.")
             break
 
         if not next_cursor or next_cursor == cursor or page >= MAX_PAGES:
