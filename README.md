@@ -1,3 +1,13 @@
+---
+title: X List Bulk Blocker
+emoji: 🚫
+colorFrom: blue
+colorTo: gray
+sdk: docker
+app_port: 7070
+pinned: false
+---
+
 # X List Bulk Blocker
 
 Block every tweet author from any public X (Twitter) list — no API keys or developer account needed. Just your browser cookies.
