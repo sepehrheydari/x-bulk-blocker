@@ -97,44 +97,61 @@ _FEATURES = json.dumps({
 }, separators=(",", ":"))
 
 # ── Dynamic query ID discovery ────────────────────────────────────────────────
-# X's internal GraphQL query IDs are embedded in their JS bundles and rotate
-# occasionally. We discover them at runtime so the tool never breaks silently.
 _query_id_cache: dict[str, str] = {}
 _BUNDLE_RE = re.compile(
-    r'https://abs\.twimg\.com/responsive-web/client-web/main\.[a-f0-9]+\.js'
+    r'https://abs\.twimg\.com/responsive-web/client-web(?:-legacy)?/main\.[A-Za-z0-9]+\.js'
 )
+_DISCOVERY_PAGES = [
+    "https://x.com/",
+    "https://x.com/explore",
+    "https://x.com/sw.js",
+]
 
 
-def _discover_query_id(operation_name: str, client: httpx.Client) -> str:
+def _discover_query_id(operation_name: str, _client: httpx.Client) -> str:
     """
     Fetch X's main JS bundle and extract the GraphQL queryId for `operation_name`.
+    Uses a clean unauthenticated client so X's CDN returns HTML, not an API error.
     Result is cached in memory for the lifetime of the process.
     """
     cached = _query_id_cache.get(operation_name)
     if cached:
         return cached
 
-    # Step 1: fetch x.com home page to find the bundle URL
-    try:
-        page_resp = client.get("https://x.com/", headers={"Accept": "text/html"}, timeout=30)
-    except httpx.RequestError as exc:
-        raise RuntimeError(f"Could not reach x.com to discover query IDs: {exc}") from exc
+    _BROWSER_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/123.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/javascript,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
 
-    bundle_match = _BUNDLE_RE.search(page_resp.text)
-    if not bundle_match:
-        raise RuntimeError(
-            "Could not locate X's main JS bundle. "
-            "X may have changed their page structure — please open an issue."
-        )
-    bundle_url = bundle_match.group(0)
+    bundle_url = None
+    with httpx.Client(headers=_BROWSER_HEADERS, follow_redirects=True, timeout=30) as disc:
+        for page_url in _DISCOVERY_PAGES:
+            try:
+                resp = disc.get(page_url)
+                if resp.status_code == 200:
+                    m = _BUNDLE_RE.search(resp.text)
+                    if m:
+                        bundle_url = m.group(0)
+                        break
+            except httpx.RequestError:
+                continue
 
-    # Step 2: fetch the bundle (public CDN, no auth required)
-    try:
-        bundle_resp = client.get(bundle_url, timeout=60)
-    except httpx.RequestError as exc:
-        raise RuntimeError(f"Could not fetch X's JS bundle: {exc}") from exc
+        if not bundle_url:
+            raise RuntimeError(
+                "Could not locate X's main JS bundle. "
+                "X may have changed their page structure — please open an issue."
+            )
 
-    # Step 3: extract queryId for the requested operation
+        try:
+            bundle_resp = disc.get(bundle_url, timeout=60)
+        except httpx.RequestError as exc:
+            raise RuntimeError(f"Could not fetch X's JS bundle: {exc}") from exc
+
     qid_match = re.search(
         rf'queryId:"([^"]+)",operationName:"{re.escape(operation_name)}"',
         bundle_resp.text,
